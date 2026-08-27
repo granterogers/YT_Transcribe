@@ -1,183 +1,197 @@
-# YouTube Channel Transcript Archive
+# YT Transcribe
 
-This Windows-friendly command-line tool builds a durable Markdown archive from a YouTube channel you are authorised to archive. It discovers videos with `yt-dlp`, uses existing captions first, and only downloads audio and runs local `faster-whisper` when captions are not usable. It remembers every result in SQLite, so stopping halfway through is safe.
+YT Transcribe turns a public YouTube channel into a resumable archive of readable Markdown transcripts. It uses English YouTube captions first, then local `faster-whisper` only when captions are unavailable.
 
-It does not bypass YouTube authentication, CAPTCHAs, paywalls, DRM, private videos, or other access controls. If YouTube requires access the tool cannot legitimately obtain, that video is recorded as failed and the run continues.
+The intended workflow is simple: **channel → Markdown transcripts → NotebookLM or another AI knowledge base.**
 
-## What it creates
+## Fast start
 
-The default output folder is `youtube_transcripts`:
+Open Command Prompt or PowerShell in the folder containing `transcribe_channel.py`:
 
-```text
-youtube_transcripts/
-  transcripts/       one Markdown file per completed video
-  metadata/          videos.csv and failed_videos.csv
-  logs/              transcribe.log
-  audio/             empty by default; used only with --keep-audio
-  database/          transcripts.sqlite3 (the resume record)
-  combined/          larger NotebookLM-ready Markdown source files
-```
-
-Each transcript includes the title, channel, URL, publish date, duration, transcription method, detected language, and the transcript itself.
-
-## Install on Windows
-
-### 1. Install Python
-
-Install Python 3.10 or later from [python.org](https://www.python.org/downloads/windows/). During installation, select **Add Python to PATH**. Open a new PowerShell window afterward and check:
-
-```powershell
-python --version
-```
-
-### 2. FFmpeg
-
-`yt-dlp` needs FFmpeg to extract audio for videos that have no usable captions. The project's dependency installation below includes a private FFmpeg binary, so a separate system-wide installation is normally unnecessary.
-
-If you prefer to manage it yourself, the simplest system-wide route is Winget:
-
-```powershell
-winget install Gyan.FFmpeg
-```
-
-Close and reopen PowerShell, then check:
-
-```powershell
-ffmpeg -version
-```
-
-If Winget is unavailable, install an FFmpeg build manually and add its `bin` folder to your Windows `PATH`.
-
-### 3. Create a virtual environment and install packages
-
-Open PowerShell in this project folder and run:
-
-```powershell
+```cmd
 python -m venv .venv
-.\.venv\Scripts\Activate.ps1
+.venv\Scripts\activate
 python -m pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-If PowerShell prevents activation, run this once in that PowerShell window and retry:
+Put an authorised Netscape-format YouTube cookie file, for example `youtube-cookies.txt`, beside `transcribe_channel.py`, then run a small test:
 
-```powershell
-Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+```cmd
+python transcribe_channel.py "https://www.youtube.com/@CHANNEL/videos" --limit 3 --cookies-file "youtube-cookies.txt"
 ```
 
-## First test: exactly three videos
+When the test transcripts look right, run the channel:
 
-Replace the URL with your channel's URL. The tool automatically uses its public **Videos** tab. This uses the real workflow but processes only three discovered videos:
-
-```powershell
-python transcribe_channel.py "https://www.youtube.com/@YOUR_CHANNEL/videos" --limit 3
+```cmd
+python transcribe_channel.py "https://www.youtube.com/@CHANNEL/videos" --cookies-file "youtube-cookies.txt" --retries 1
 ```
 
-Start with `--dry-run` if you only want to confirm discovery and see the first three videos without downloading or transcribing:
+All generated data is written beside the script under `youtube_transcripts/`.
 
-```powershell
-python transcribe_channel.py "https://www.youtube.com/@YOUR_CHANNEL/videos" --limit 3 --dry-run
+## Repository layout
+
+```text
+YT_Transcribe/
+├── transcribe_channel.py       CLI entry point and orchestration
+├── requirements.txt            Python dependencies
+├── channel_transcriber/
+│   ├── database.py             SQLite state and CSV exports
+│   ├── models.py               shared data objects and output paths
+│   ├── output.py               Markdown, timestamps, combining
+│   ├── run_lock.py             single-run protection
+│   └── youtube.py              yt-dlp, captions, audio, Whisper
+└── youtube_transcripts/        generated and ignored by Git
 ```
 
-Review `youtube_transcripts\transcripts` and `youtube_transcripts\metadata\videos.csv` before launching the complete archive.
+Do not copy only `transcribe_channel.py`: `channel_transcriber/` must remain alongside it.
 
-## Run the full channel
+## Output
 
-```powershell
-python transcribe_channel.py "https://www.youtube.com/@YOUR_CHANNEL/videos"
+```text
+youtube_transcripts/
+├── transcripts/                Video title.md files
+├── metadata/
+│   ├── processing_log.csv      complete worked/failed/skipped list
+│   ├── videos.csv              compatibility copy of the full log
+│   └── failed_videos.csv       failures only
+├── database/transcripts.sqlite3
+├── logs/transcribe.log         detailed diagnostics
+├── combined/                   NotebookLM-oriented sources
+└── audio/                      only used with --keep-audio
 ```
 
-The tool normally excludes Shorts and livestreams. The conservative Shorts rule excludes `/shorts/` URLs and videos a minute or shorter, so a short conventional video can be excluded too. Include those content types explicitly when wanted:
+Each transcript has title, channel, ID, URL, publish date, duration, method and language. The body is formatted as readable paragraphs with a timestamp heading about every 30 seconds, for example `**[04:30]**`. Use `--no-timestamps` only when plain paragraphs are preferred.
 
-```powershell
-python transcribe_channel.py "https://www.youtube.com/@YOUR_CHANNEL/videos" --include-shorts --include-livestreams
+## Cookies and multiple YouTube accounts
+
+Videos that play in a signed-in browser can reject an unsigned command-line request. Use a cookie file only for an account that is legitimately allowed to watch the video.
+
+For multiple Google accounts, create a dedicated Edge profile for the one account this job should use. Sign into only that account, verify its YouTube avatar, then export only `youtube.com` cookies in **Netscape** format with a reputable local-only cookie exporter. Save the resulting file beside the script and use:
+
+```cmd
+python transcribe_channel.py "CHANNEL_URL" --cookies-file "espavo_cookies.txt" --retry-failed --retries 1
 ```
 
-Use a separate archive folder for each channel if needed:
+Cookie files are authentication material. Never commit, email, upload, paste into chat, or keep them in a shared cloud folder. Export a fresh file when YouTube reports `The page needs to be reloaded` or the session expires. `.gitignore` excludes common cookie-file names.
 
-```powershell
-python transcribe_channel.py "CHANNEL_URL" --output-dir "D:\Archives\my-channel"
+`--cookies-from-browser edge` can read a local browser session directly. It is convenient on a normal PC but may fail in managed, sandboxed, or remote environments. An explicitly exported cookie file is more portable.
+
+## Commands
+
+### Discover without downloading
+
+```cmd
+python transcribe_channel.py "CHANNEL_URL" --limit 3 --dry-run
 ```
 
-## Stop, resume, and retry
+### Process a small test
 
-Press `Ctrl+C` to stop. Every completed video is committed to SQLite before the next one begins. Run the same command again to continue: completed videos are skipped by default.
-
-```powershell
-python transcribe_channel.py "CHANNEL_URL" --resume
+```cmd
+python transcribe_channel.py "CHANNEL_URL" --limit 3 --cookies-file "youtube-cookies.txt"
 ```
 
-`--resume` is included as an easy-to-read reminder; safe resume is the default behaviour. To retry only videos that previously failed:
+### Resume
 
-```powershell
-python transcribe_channel.py "CHANNEL_URL" --retry-failed
+Rerun the same command. Completed videos are skipped automatically.
+
+```cmd
+python transcribe_channel.py "CHANNEL_URL" --cookies-file "youtube-cookies.txt"
 ```
 
-To deliberately redo every completed video, use `--force`. This overwrites their Markdown files when the filename remains the same.
+### Retry previous failures
 
-```powershell
+```cmd
+python transcribe_channel.py "CHANNEL_URL" --cookies-file "youtube-cookies.txt" --retry-failed --retries 1
+```
+
+### Deliberately redo completed videos
+
+```cmd
 python transcribe_channel.py "CHANNEL_URL" --force
 ```
 
-## Transcript quality and speed
+### Include normally excluded content
 
-The default `small` model is a sensible starting point for a normal PC. Models are only loaded when a video needs local transcription; captioned videos do not use Whisper.
-
-| Model | Best for | Trade-off |
-| --- | --- | --- |
-| `tiny` / `base` | Fast trial runs | Lowest accuracy |
-| `small` | Most first full archives | Good balance |
-| `medium` | Clearer speech, higher accuracy | Slower and uses more memory |
-| `large-v3` | Highest quality, capable GPU | Much slower/heavier on CPU |
-
-The program uses an NVIDIA CUDA device automatically when `faster-whisper` can see one, otherwise it falls back to CPU. You can make the choice explicit:
-
-```powershell
-python transcribe_channel.py "CHANNEL_URL" --model medium --device cpu
-python transcribe_channel.py "CHANNEL_URL" --model large-v3 --device cuda
+```cmd
+python transcribe_channel.py "CHANNEL_URL" --include-shorts --include-livestreams
 ```
 
-Set a language when you know it, for example `--language en`. Leaving it out lets Whisper detect the spoken language; caption lookup tries English tracks first and falls back to Whisper rather than downloading every translated caption track.
+### Choose a Whisper model
 
-## Useful options
-
-```text
---timestamps                 Put timestamps beside transcript segments.
---keep-audio                 Retain extracted MP3 files (uses substantial disk space).
---retries 5                  Retry temporary operation failures five times.
---delay 2                    Wait two seconds between videos.
---log-level DEBUG            More diagnostic detail in the log.
---limit 10                   Process at most ten discovered videos.
---dry-run                    Discover and list videos, but do no downloading/transcription.
---cookies-from-browser edge  Use the local Edge session for videos you can watch while signed in.
+```cmd
+python transcribe_channel.py "CHANNEL_URL" --model medium
 ```
 
-## Combine transcripts for NotebookLM
+`small` is the default balance. `tiny` and `base` are good for fast testing. `medium` and `large-v3` need more time and memory. CUDA is selected automatically when a compatible NVIDIA GPU is available; otherwise CPU is used.
 
-Once a run has created individual Markdown transcripts, make larger sources without contacting YouTube again:
+### Keep downloaded audio
 
-```powershell
+```cmd
+python transcribe_channel.py "CHANNEL_URL" --keep-audio
+```
+
+Audio is deleted after successful local transcription by default.
+
+### Combine sources for NotebookLM
+
+```cmd
 python transcribe_channel.py --combine
 ```
 
-By default the command creates groups of 45 videos, while also keeping each combined file below approximately 1.5 million characters. That usually produces a comfortable number of clearly separated sources for NotebookLM. Change the grouping if desired:
+This writes groups of approximately 45 clearly separated videos into `youtube_transcripts/combined/`. Tune with `--combine-size 40` or `--max-combined-chars 1200000`.
 
-```powershell
-python transcribe_channel.py --combine --combine-size 40 --max-combined-chars 1200000
-```
+## Processing model
 
-Upload files from `youtube_transcripts\combined` as sources. If NotebookLM reports a current size or source limit, lower `--combine-size` or `--max-combined-chars` and run the combine command again.
+1. yt-dlp discovers the channel’s public Videos listing.
+2. Every discovery is written to SQLite.
+3. Each video is loaded one at a time for full metadata.
+4. English captions are tried first: `en`, `en-US`, and `en-GB`.
+5. Automatic rolling VTT caption cues are de-duplicated by word overlap.
+6. If captions are absent, yt-dlp extracts audio and faster-whisper transcribes locally.
+7. The Markdown file and SQLite status are committed before the next video.
+8. CSV logs are refreshed after every item.
+
+## Status and failure handling
+
+| Status | Meaning |
+| --- | --- |
+| `completed` | A Markdown transcript was created. |
+| `failed` | Access, caption, download, or transcription failed; inspect `processing_log.csv`. |
+| `skipped` | The content type was excluded, such as a Short or livestream. |
+| `pending` | Discovered but not yet processed. |
+| `running` | The run was interrupted mid-item; it will be retried on the next run. |
+
+The console gives concise failure messages. Full tracebacks go only to `logs/transcribe.log`. `Ctrl+C` is safe: rerun the same command to continue. A per-archive lock prevents two copies of the script from working on the same SQLite database.
+
+The tool records and continues past deleted, private, region-restricted, DRM-protected, paywalled, CAPTCHA-gated, or otherwise unauthorised videos. It does not bypass access controls.
 
 ## Troubleshooting
 
-- **`ffmpeg` is not recognised:** Install FFmpeg, reopen PowerShell, and make sure its `bin` folder is in `PATH`.
-- **Caption download fails or returns no captions:** That is normal for some videos. The program proceeds to local transcription.
-- **`CUDA` errors:** Use `--device cpu`. CUDA setup varies by graphics driver and hardware; CPU transcription remains supported.
-- **YouTube blocks a request or asks you to sign in:** The program will log the error and continue. Do not try to circumvent access controls. Update yt-dlp first with `pip install --upgrade yt-dlp`; then retry legitimately accessible videos with `--retry-failed`.
-- **A video is missing from discovery:** Available public videos are all the tool can discover. The tool automatically uses the channel's `/videos` listing and ignores unavailable entries rather than stopping the archive.
-- **A short regular video was skipped:** Use `--include-shorts`; the default filter is intentionally conservative.
-- **Need to find errors:** Open `youtube_transcripts\metadata\failed_videos.csv` and `youtube_transcripts\logs\transcribe.log`.
+| Symptom | Response |
+| --- | --- |
+| `ModuleNotFoundError: channel_transcriber` | Extract or clone the complete project, not only the main script. |
+| `The page needs to be reloaded` | Refresh and re-export a fresh cookie file from the intended account profile, then run with `--retry-failed`. |
+| `This video is not available` | YouTube itself is denying access. It may be deleted, private, or restricted for the selected session. |
+| FFmpeg error | Run `pip install -r requirements.txt`; `imageio-ffmpeg` supplies a fallback binary. |
+| CUDA error | Continue with `--device cpu`. |
+| Missing output | Inspect `metadata/processing_log.csv` and `logs/transcribe.log`. |
 
-## Notes on scale
+## Handoff notes for another AI or developer
 
-Eight hundred videos is a long-running local job, especially where audio must be transcribed. Use the three-video test first, keep the computer awake for the full run, and make sure there is adequate free disk space for temporary audio and final transcripts. Temporary audio is deleted by default after each video.
+This is intentionally a small Python project. Preserve that unless a clear requirement calls for more.
+
+- SQLite, not filenames, is the resume source of truth.
+- Caption-first processing saves downloads and local compute.
+- English is the default language for this channel, but `--language` remains configurable.
+- `append_without_overlap` in `channel_transcriber/youtube.py` is essential: YouTube automatic captions commonly repeat earlier words in each rolling cue.
+- Never log cookie values or commit cookie files.
+- Do not retry deterministic errors such as `This video is not available`; retry transient 429, timeout, connection-reset and server errors.
+- Do not remove the single-run lock.
+- Keep relative cookie-file paths and default output rooted beside the script.
+
+Before changing YouTube clients, cookies, download settings or transcription flow, run `--limit 3 --dry-run`, then a small authenticated test. YouTube behaviour changes often.
+
+## Repository policy
+
+Source and documentation only belong in Git. Never commit cookie files, browser-profile data, transcripts, SQLite databases, audio, logs, `.venv`, API keys, passwords, or account exports. Review `git status` before every commit.
