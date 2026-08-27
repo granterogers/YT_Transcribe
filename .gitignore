@@ -1,0 +1,21 @@
+# Local Python environment and caches
+.venv/
+__pycache__/
+*.py[cod]
+
+# Authentication material: never commit or share these files
+*cookies*.txt
+cookies.txt
+
+# Generated archive output and temporary audio
+youtube_transcripts/
+audio/
+*.sqlite3
+*.sqlite3-*
+*.log
+
+# Editor and operating-system files
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store
