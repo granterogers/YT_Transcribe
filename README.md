@@ -77,6 +77,16 @@ Cookie files are authentication material. Never commit, email, upload, paste int
 
 `--cookies-from-browser edge` can read a local browser session directly. It is convenient on a normal PC but may fail in managed, sandboxed, or remote environments. An explicitly exported cookie file is more portable.
 
+## Vimeo folders
+
+Passing a Vimeo folder (or showcase) URL instead of a YouTube channel URL works the same way — the platform is detected automatically from the URL, and output defaults to `vimeo_transcripts/` beside the script instead of `youtube_transcripts/`, so the two never mix in the same database.
+
+```cmd
+python transcribe_channel.py "https://vimeo.com/user/USERID/folder/FOLDERID" --cookies-file "vimeo_cookies.txt" --retries 1
+```
+
+Private folders require an authenticated session the same way private YouTube videos do: export **only `vimeo.com`** cookies (Netscape format) from an account with access to the folder, following the same steps as above. `--include-shorts`/`--include-livestreams` have no effect on Vimeo (there is no equivalent distinction); every entry in the folder is processed.
+
 ## Commands
 
 ### Discover without downloading

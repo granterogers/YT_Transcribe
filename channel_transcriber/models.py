@@ -44,6 +44,7 @@ class Transcript:
     method: str
     language: str | None = None
     segments: list[tuple[float, float, str]] | None = None
+    speakers: list[str] | None = None  # one label per segment, from diarization
 
 
 @dataclass(frozen=True)

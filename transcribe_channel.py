@@ -10,17 +10,18 @@ from pathlib import Path
 
 from channel_transcriber.database import Database
 from channel_transcriber.models import Paths, Video
-from channel_transcriber.output import combine, write_markdown
+from channel_transcriber.output import combine, write_transcript
 from channel_transcriber.run_lock import RunLock
 
 SCRIPT_FOLDER = Path(__file__).resolve().parent
 from channel_transcriber.youtube import Whisper, choose_device, configure_cookies, details, discover, download_audio, get_captions
+from channel_transcriber.diarize import diarize_segments
 
 
 def arguments() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Resumable, caption-first YouTube channel transcription.")
-    parser.add_argument("channel_url", nargs="?", help="YouTube channel/videos-page URL")
-    parser.add_argument("--output-dir", help="Output folder (default: youtube_transcripts beside this script)")
+    parser = argparse.ArgumentParser(description="Resumable, caption-first YouTube/Vimeo transcription.")
+    parser.add_argument("channel_url", nargs="?", help="YouTube channel/videos-page URL, or a Vimeo folder/showcase URL")
+    parser.add_argument("--output-dir", help="Output folder (default: youtube_transcripts or vimeo_transcripts beside this script, by URL)")
     parser.add_argument("--model", default="small", choices=["tiny", "base", "small", "medium", "large-v3"])
     parser.add_argument("--language", default="en", help="Spoken/caption language (default: en).")
     parser.add_argument("--device", default="auto", choices=["auto", "cpu", "cuda"])
@@ -37,6 +38,9 @@ def arguments() -> argparse.Namespace:
                         help="Use a local signed-in browser session for legitimately accessible videos (default: chrome).")
     cookies.add_argument("--cookies-file", help="Netscape-format cookie file created from your own browser session.")
     parser.add_argument("--keep-audio", action="store_true")
+    parser.add_argument("--diarize", action="store_true",
+                         help="Label speaker turns (Steve/Guest) using voice clustering. Forces an audio download for every video, even ones with captions.")
+    parser.add_argument("--max-speakers", type=int, default=2, help="Expected distinct speakers for --diarize (default: 2).")
     parser.add_argument("--timestamps", action=argparse.BooleanOptionalAction, default=True, help="Include readable timestamps (default: enabled).")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--combine", action="store_true", help="Create NotebookLM-oriented combined files, then exit.")
@@ -78,8 +82,13 @@ def concise_error(error: Exception) -> str:
 
 
 def main() -> int:
+    # Windows consoles default to cp1252, which cannot encode many characters
+    # (emoji, curly quotes) that show up in real video titles.
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
     args = arguments()
-    output_folder = Path(args.output_dir).resolve() if args.output_dir else SCRIPT_FOLDER / "youtube_transcripts"
+    default_dir_name = "vimeo_transcripts" if args.channel_url and "vimeo.com" in args.channel_url else "youtube_transcripts"
+    output_folder = Path(args.output_dir).resolve() if args.output_dir else SCRIPT_FOLDER / default_dir_name
     cookie_file = Path(args.cookies_file) if args.cookies_file else None
     if cookie_file and not cookie_file.is_absolute(): cookie_file = SCRIPT_FOLDER / cookie_file
     paths = Paths(output_folder); paths.create()
@@ -97,7 +106,7 @@ def main() -> int:
             print(f"Created {len(made)} combined NotebookLM source file(s) in {paths.combined}"); return 0
         if not args.channel_url:
             raise SystemExit("channel_url is required unless --combine is used.")
-        videos = discover(args.channel_url, args.limit)
+        videos = retry(lambda: discover(args.channel_url, args.limit), args.retries)
         print(f"Discovered {len(videos)} video(s).")
         for video in videos: database.upsert(video)
         if args.dry_run:
@@ -121,15 +130,26 @@ def main() -> int:
                 logging.info("[%s/%s] %s", index, len(videos), video.title)
                 with tempfile.TemporaryDirectory(prefix=f"yt_{video.video_id}_") as temp:
                     temp_path = Path(temp)
+                    logging.info("  checking for captions...")
                     transcript = retry(lambda: get_captions(video, temp_path, args.language), args.retries)
+                    audio = None
                     if transcript is None:
-                        logging.info("No usable caption track; transcribing locally with faster-whisper.")
+                        logging.info("  no usable caption track; downloading audio for faster-whisper...")
                         audio = retry(lambda: download_audio(video, temp_path), args.retries)
+                        logging.info("  transcribing with faster-whisper (long videos can take a while)...")
                         transcript = retry(lambda: whisper.transcribe(audio, args.language), args.retries)
-                        if args.keep_audio: shutil.copy2(audio, paths.audio / f"{video.video_id}{audio.suffix}")
-                output = write_markdown(paths.transcripts, video, transcript, args.timestamps)
+                    else:
+                        logging.info("  captions found (%s segments).", len(transcript.segments or []))
+                    if args.diarize and transcript.segments:
+                        if audio is None:
+                            logging.info("  downloading audio for diarization...")
+                            audio = retry(lambda: download_audio(video, temp_path), args.retries)
+                        logging.info("  diarizing speakers...")
+                        transcript.speakers = retry(lambda: diarize_segments(audio, transcript.segments, args.max_speakers), args.retries)
+                    if args.keep_audio and audio is not None: shutil.copy2(audio, paths.audio / f"{video.video_id}{audio.suffix}")
+                output = write_transcript(paths.transcripts, video, transcript, args.timestamps)
                 database.finish(video.video_id, str(output), transcript.method, transcript.language)
-                logging.info("Completed with %s", transcript.method)
+                logging.info("[%s/%s] Completed with %s", index, len(videos), transcript.method)
             except Exception as exc:
                 message = f"{type(exc).__name__}: {concise_error(exc)}"; database.fail(discovered_video.video_id, message)
                 logging.error("[%s/%s] Failed: %s", index, len(videos), message)

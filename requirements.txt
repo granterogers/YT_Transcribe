@@ -1,3 +1,12 @@
-yt-dlp>=2025.1.15
+yt-dlp[default]>=2025.1.15
 faster-whisper>=1.1.0,<2.0
 imageio-ffmpeg>=0.6.0
+setuptools<81
+resemblyzer>=0.1.4
+scikit-learn>=1.5
+requests>=2.31
+curl_cffi>=0.7
+
+# GPU-only (Windows/CUDA local machines) -- not needed on a CPU-only deployment:
+# nvidia-cublas-cu12
+# nvidia-cudnn-cu12

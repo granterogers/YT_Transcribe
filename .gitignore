@@ -9,6 +9,7 @@ cookies.txt
 
 # Generated archive output and temporary audio
 youtube_transcripts/
+vimeo_transcripts/
 audio/
 *.sqlite3
 *.sqlite3-*
