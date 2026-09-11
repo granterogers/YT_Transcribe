@@ -29,12 +29,23 @@ else
   # The official installer; --accept-all-defaults keeps it non-interactive.
   bash -c "$(curl -fsSL https://raw.githubusercontent.com/oracle/oci-cli/master/scripts/install/install.sh)" \
     -- --accept-all-defaults
+  # The installer's own location has moved between releases, so find the binary
+  # rather than assuming where it landed.
+  if ! command -v oci >/dev/null; then
+    FOUND="$(find "$HOME" -maxdepth 4 -type f -name oci -perm -u+x 2>/dev/null | head -1)"
+    [ -n "$FOUND" ] || { echo "OCI CLI install finished but no 'oci' binary was found." >&2; exit 1; }
+    export PATH="$(dirname "$FOUND"):$PATH"
+  fi
   info "installed: $(oci --version)"
 fi
-# The installer edits .bashrc, but only for interactive shells; make sure a
-# plain `bash -c` in this WSL distro finds it too.
-grep -q 'oracle-cli/bin' "$HOME/.profile" 2>/dev/null || \
-  printf '\nexport PATH="$HOME/bin:$HOME/lib/oracle-cli/bin:$PATH"\n' >> "$HOME/.profile"
+OCI_BIN_DIR="$(dirname "$(command -v oci)")"
+# The installer edits .bashrc only, which a login shell reads indirectly and a
+# `bash -c` never reads at all. Put it in both so every shell finds it.
+for rc in "$HOME/.profile" "$HOME/.bashrc"; do
+  [ -f "$rc" ] || touch "$rc"
+  grep -q 'oracle-cli/bin' "$rc" 2>/dev/null || \
+    printf '\nexport PATH="$HOME/bin:$HOME/lib/oracle-cli/bin:%s:$PATH"\n' "$OCI_BIN_DIR" >> "$rc"
+done
 
 say "Repository"
 if [ -d "$REPO/.git" ]; then
@@ -49,7 +60,11 @@ info "on branch $BRANCH"
 
 cat <<EOF
 
-$(printf '\033[1mReady.\033[0m') Run these three, in this WSL shell:
+$(printf '\033[1mReady.\033[0m') Run these four, one at a time, in this WSL shell:
+
+  0. source ~/.profile
+       Required: the OCI CLI was just added to your PATH, and this shell was
+       started before that happened. Check it worked with:  oci --version
 
   1. oci session authenticate --profile-name DEFAULT
        A browser opens for the Oracle login. If it does not, copy the URL it

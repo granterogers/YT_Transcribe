@@ -41,6 +41,9 @@ oci_() { oci --region "${REGION_ARG[@]}" "$@"; }
 # ---------------------------------------------------------- prequisites ----
 say "Prerequisites"
 command -v jq >/dev/null || die "jq is required. Install it (apt install jq / brew install jq) and re-run."
+# The OCI installer puts the CLI here but only wires it into interactive shells;
+# look before concluding it is missing and installing a second copy.
+export PATH="$HOME/bin:$HOME/lib/oracle-cli/bin:$PATH"
 if ! command -v oci >/dev/null; then
   info "OCI CLI not found; installing to ~/lib/oracle-cli (non-interactive)."
   bash -c "$(curl -fsSL https://raw.githubusercontent.com/oracle/oci-cli/master/scripts/install/install.sh)" \
