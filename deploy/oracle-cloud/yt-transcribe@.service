@@ -1,0 +1,55 @@
+# Templated unit: one instance per source.
+#   systemctl start yt-transcribe@youtube
+#   systemctl start yt-transcribe@vimeo
+#
+# %i is the instance name and selects both the env file and run.sh's mode.
+# Installed by install-service.sh, which substitutes __USER__ / __REPO__.
+[Unit]
+Description=YT_Transcribe unattended run (%i)
+Documentation=file://__REPO__/deploy/oracle-cloud/README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=__USER__
+Group=__USER__
+WorkingDirectory=__REPO__
+
+# Secrets live only in this root-owned, 0600 file -- never in the unit, never
+# in the repo, never on a command line visible to `ps`.
+EnvironmentFile=/etc/yt-transcribe/%i.env
+Environment=REPO_ROOT=__REPO__
+Environment=PYTHONUNBUFFERED=1
+
+ExecStart=__REPO__/deploy/oracle-cloud/run.sh %i
+
+# The pipeline is resumable by design: SQLite marks anything already
+# `completed`, so an interrupted run picks up where it stopped. Restarting on
+# failure is therefore safe and costs no duplicated work.
+Restart=on-failure
+RestartSec=120
+# Give up after 10 failed starts in an hour rather than hot-looping all weekend
+# on a genuine misconfiguration (bad cookies, revoked token).
+StartLimitIntervalSec=3600
+StartLimitBurst=10
+
+# SIGINT is what transcribe_channel.py handles cleanly ("Stopped safely").
+KillSignal=SIGINT
+TimeoutStopSec=300
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=yt-transcribe-%i
+
+# Modest hardening: the run needs outbound HTTPS, the repo tree, and nothing else.
+NoNewPrivileges=true
+PrivateTmp=false
+ProtectSystem=full
+ProtectHome=false
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+
+[Install]
+WantedBy=multi-user.target

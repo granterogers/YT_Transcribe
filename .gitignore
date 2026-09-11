@@ -20,3 +20,7 @@ audio/
 .idea/
 Thumbs.db
 .DS_Store
+
+# Deployment environment files (contain the Vimeo token and cookie paths)
+deploy/**/*.env
+!deploy/**/*.env.example
