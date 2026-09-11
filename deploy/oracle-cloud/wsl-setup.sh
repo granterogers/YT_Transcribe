@@ -66,9 +66,17 @@ $(printf '\033[1mReady.\033[0m') Run these four, one at a time, in this WSL shel
        Required: the OCI CLI was just added to your PATH, and this shell was
        started before that happened. Check it worked with:  oci --version
 
-  1. oci session authenticate --profile-name DEFAULT
-       A browser opens for the Oracle login. If it does not, copy the URL it
-       prints into your Windows browser. Pick your home region when asked.
+  1. oci session authenticate --profile-name DEFAULT --region <your home region>
+       e.g. --region us-ashburn-1. Name it explicitly: the menu lists 85
+       regions across every Oracle realm, and choosing one your tenancy does
+       not live in sends you to a sign-in page that cannot find your account.
+       Your home region is shown top-right when you log in at cloud.oracle.com.
+       A browser opens; if it does not (WSL often cannot launch one), copy the
+       printed URL into your Windows browser yourself.
+
+       No Oracle Cloud account yet? Sign up first at oracle.com/cloud/free --
+       see deploy/oracle-cloud/README.md, "Prerequisite: an Oracle Cloud
+       account".
 
   2. cd $REPO && bash deploy/oracle-cloud/provision.sh
        Builds the network and the Ampere A1 instance, then waits for it to

@@ -91,6 +91,42 @@ it by hand.
 
 ---
 
+## Prerequisite: an Oracle Cloud account
+
+`provision.sh` needs a tenancy to build into. If you have never signed up,
+start at <https://www.oracle.com/cloud/free/> — about 10 minutes.
+
+Two things during signup matter later and one of them is irreversible:
+
+- **Cloud Account Name** (your tenancy name). This is what the OCI sign-in page
+  asks for under "Tenancy". Write it down.
+- **Home Region.** *This cannot be changed after signup.* Pick a region you
+  actually want to run in — `provision.sh` can target others, but your home
+  region is where identity lives and where Always Free capacity is easiest to
+  get.
+
+Identity verification asks for a credit or debit card and places a small
+temporary authorization (typically around $1) that is reversed. Always Free
+resources stay free; nothing is charged unless you deliberately upgrade to Pay
+As You Go. Prepaid and virtual cards are usually rejected.
+
+New accounts begin a 30-day trial with promotional credits. An
+`VM.Standard.A1.Flex` at 4 OCPU / 24 GB is exactly the Always Free ARM
+allowance, so when the trial ends the instance converts to Always Free and
+keeps running rather than being billed.
+
+Once the provisioning email arrives, authenticate against **your home region**,
+naming it explicitly so you skip the 85-entry region menu:
+
+```bash
+oci session authenticate --profile-name DEFAULT --region us-ashburn-1
+```
+
+Picking the wrong region here sends you to a sign-in realm your account does
+not exist in, and the login fails with an unhelpful "Tenancy" prompt.
+
+---
+
 ## 0. Provision the instance (what `provision.sh` automates)
 
 Oracle's Always Free ARM allowance is 4 OCPU / 24 GB across the tenancy, so ask
