@@ -1,0 +1,63 @@
+#cloud-config
+# First-boot bootstrap for the YT_Transcribe Ampere A1 instance.
+# provision.sh substitutes __REPO_URL__ / __BRANCH__ / __RUN_USER__ and passes
+# this as instance user_data. It contains NO secrets -- the Vimeo cookie file
+# and access token are delivered separately by launch-vimeo.sh over SSH.
+package_update: true
+package_upgrade: false
+
+write_files:
+  - path: /usr/local/bin/yt-bootstrap.sh
+    permissions: '0755'
+    content: |
+      #!/usr/bin/env bash
+      # Runs once, as root, on first boot. Everything it does is idempotent, so
+      # a re-run after a failure is safe.
+      set -uo pipefail
+      LOG=/var/log/yt-transcribe-bootstrap.log
+      exec > >(tee -a "$LOG") 2>&1
+      echo "=== yt-transcribe bootstrap $(date -Is) ==="
+
+      RUN_USER=__RUN_USER__
+      REPO_URL=__REPO_URL__
+      BRANCH=__BRANCH__
+      HOME_DIR="$(getent passwd "$RUN_USER" | cut -d: -f6)"
+      REPO="$HOME_DIR/YT_Transcribe"
+
+      fail() { echo "BOOTSTRAP FAILED: $*"; echo "$*" > /var/lib/yt-transcribe-bootstrap.failed; exit 1; }
+
+      # cloud-init can race apt's own daily update timers on first boot.
+      for i in $(seq 1 60); do
+        fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1 || break
+        echo "waiting for apt lock ($i)"; sleep 10
+      done
+
+      DEBIAN_FRONTEND=noninteractive apt-get update -y || fail "apt-get update"
+      DEBIAN_FRONTEND=noninteractive apt-get install -y git sqlite3 rsync || fail "apt-get install git"
+
+      if [ -d "$REPO/.git" ]; then
+        runuser -u "$RUN_USER" -- git -C "$REPO" fetch --all --prune || fail "git fetch"
+      else
+        runuser -u "$RUN_USER" -- git clone "$REPO_URL" "$REPO" || fail "git clone $REPO_URL"
+      fi
+      runuser -u "$RUN_USER" -- git -C "$REPO" checkout "$BRANCH" || fail "git checkout $BRANCH"
+
+      # setup.sh installs ffmpeg, the build toolchain (webrtcvad is sdist-only on
+      # aarch64), Node 22 for yt-dlp's JS runtime, and the venv with CPU torch.
+      runuser -u "$RUN_USER" -- bash "$REPO/deploy/oracle-cloud/setup.sh" || fail "setup.sh"
+
+      # Installs the templated unit and root-owned 0600 env files from the
+      # examples. The Vimeo URL/cookie path/token are filled in later, over SSH.
+      RUN_USER="$RUN_USER" runuser -u "$RUN_USER" -- \
+        bash "$REPO/deploy/oracle-cloud/install-service.sh" || fail "install-service.sh"
+
+      install -d -o "$RUN_USER" -g "$RUN_USER" -m 0700 "$HOME_DIR/secrets"
+
+      rm -f /var/lib/yt-transcribe-bootstrap.failed
+      date -Is > /var/lib/yt-transcribe-bootstrap.done
+      echo "=== bootstrap complete $(date -Is) ==="
+
+runcmd:
+  - [ bash, /usr/local/bin/yt-bootstrap.sh ]
+
+final_message: "yt-transcribe bootstrap finished after $UPTIME seconds"

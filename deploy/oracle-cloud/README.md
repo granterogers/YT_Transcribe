@@ -10,7 +10,50 @@ hack is inert outside `win32`.
 
 ---
 
-## 0. Provision the instance
+## Quick start — two commands
+
+Everything except Oracle authentication and handing over your own Vimeo
+credentials is automated.
+
+```bash
+# once: prove who you are to Oracle (browser login, no key files to manage)
+oci session authenticate --profile-name DEFAULT
+
+# 1. create VCN, gateway, route, subnet and the A1.Flex instance, and let
+#    cloud-init install ffmpeg, Node 22, the venv and the systemd unit
+bash deploy/oracle-cloud/provision.sh
+
+# 2. hand over the Vimeo folder URL, cookie file and token, then start the run
+bash deploy/oracle-cloud/launch-vimeo.sh
+```
+
+`provision.sh` retries across every availability domain for two hours by
+default when Always Free ARM capacity is unavailable (`CAPACITY_RETRY_MINUTES`
+raises that). It is idempotent — re-running reuses what it already built and
+never launches a second instance. It writes `~/.yt-transcribe-provision.env`,
+which `launch-vimeo.sh` reads for the host and key.
+
+`launch-vimeo.sh` prompts for the folder URL, the path to your local
+`cookies.txt`, and the access token (typed invisibly). It offers to carry your
+existing `vimeo_transcripts` database over — WAL-checkpointed first, so no
+recent results are lost — runs the preflight, runs a two-video smoke test, and
+only then enables the systemd unit. `SKIP_SMOKE=1` skips the trial run.
+
+### The two things that are not automated, and why
+
+1. **`oci session authenticate`** — this proves your Oracle identity. It is not
+   something I can or should do for you.
+2. **The Vimeo cookie file and access token** — these are your credentials. The
+   scripts move them from your machine to your instance over SSH and check that
+   they work; nothing ever reads their values back out, prints them, or writes
+   them anywhere but the root-owned `0600` env file on the instance.
+
+The sections below document what those two scripts do, and how to drive any of
+it by hand.
+
+---
+
+## 0. Provision the instance (what `provision.sh` automates)
 
 Oracle's Always Free ARM allowance is 4 OCPU / 24 GB across the tenancy, so ask
 for all of it in one instance.
@@ -77,7 +120,7 @@ Two consequences, both handled by `setup.sh`:
 
 ---
 
-## 2. Install
+## 2. Install (what cloud-init runs on first boot)
 
 ```bash
 bash deploy/oracle-cloud/setup.sh
@@ -159,7 +202,7 @@ the tree on first run.
 
 ---
 
-## 5. Install and start the service
+## 5. Install and start the service (what `launch-vimeo.sh` automates)
 
 ```bash
 bash deploy/oracle-cloud/install-service.sh
@@ -267,3 +310,7 @@ cd ~/YT_Transcribe && .venv/bin/python transcribe_channel.py --combine \
 | `ModuleNotFoundError: pkg_resources` | `setuptools` got upgraded past 81. `pip install 'setuptools<81'`. |
 | Unit stops after ~10 failures | `StartLimitBurst` tripped. Fix the underlying error, then `sudo systemctl reset-failed yt-transcribe@youtube` and start again. |
 | Disk full | Enlarge the boot volume, or check nothing is accumulating under the repo `.tmp/` from a killed run. |
+| `provision.sh` exits 75 | Every AD is out of Always Free ARM capacity. Raise `CAPACITY_RETRY_MINUTES=1440`, or try `REGION=us-phoenix-1`. |
+| `provision.sh` says credentials expired | Session tokens last an hour. `oci session authenticate --profile-name DEFAULT` and re-run; it resumes from what already exists. |
+| Bootstrap never finishes | `ssh -i ~/.ssh/yt-transcribe_oracle ubuntu@<ip> 'sudo tail -100 /var/log/yt-transcribe-bootstrap.log'`. Re-run it with `sudo bash /usr/local/bin/yt-bootstrap.sh` — it is idempotent. |
+| Smoke test fails | Nothing is started, by design. The output names the failing stage: discovery (URL/token), cookies, or transcription. |
