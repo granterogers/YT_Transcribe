@@ -193,7 +193,28 @@ ssh ubuntu@<public-ip> 'chmod 600 ~/secrets/*.txt'
 Both must be Netscape format; the Vimeo one must contain `vimeo.com`-scoped
 entries. `verify.sh` confirms the format and scope **without printing contents**.
 
-The Vimeo API token goes into the env file on the server, edited on the server:
+If your export is **JSON** — which is what Cookie-Editor, EditThisCookie and
+Playwright all produce — convert it first. yt-dlp's `--cookies` reads only the
+Netscape format and fails with an opaque parse error on JSON:
+
+```bash
+python3 deploy/oracle-cloud/convert-cookies.py vimeo.com_cookies.json ~/secrets/vimeo_cookies.txt
+```
+
+`launch-vimeo.sh` detects a JSON file and runs this for you. The converter
+prints cookie counts and domains only, never a value, and writes the output
+`0600`.
+
+If the token is already saved in a file on your machine, point at it rather
+than retyping it:
+
+```bash
+VIMEO_TOKEN_FILE=/mnt/c/Users/you/Downloads/vimeo_token.txt \
+  bash deploy/oracle-cloud/launch-vimeo.sh
+```
+
+Otherwise `launch-vimeo.sh` prompts for it with the input hidden. To set it by
+hand on the server instead:
 
 ```bash
 sudo nano /etc/yt-transcribe/vimeo.env     # set VIMEO_ACCESS_TOKEN=...
@@ -354,3 +375,4 @@ cd ~/YT_Transcribe && .venv/bin/python transcribe_channel.py --combine \
 | Smoke test fails | Nothing is started, by design. The output names the failing stage: discovery (URL/token), cookies, or transcription. |
 | `'oci' is not recognized` / `bash` opens WSL's installer on Windows | You are in `cmd`, not WSL. See **On Windows: start here** above. |
 | `launch-vimeo.sh` says it found no existing database | It only searches `/mnt/c/Users` six levels deep. Pass `VIMEO_LOCAL_DIR=/mnt/c/...` explicitly. |
+| yt-dlp cannot parse the cookie file | It is probably a JSON export. Run `convert-cookies.py`, or let `launch-vimeo.sh` detect and convert it. |

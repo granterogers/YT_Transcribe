@@ -51,6 +51,17 @@ while :; do
   [ -n "$COOKIES_LOCAL" ] || read -r -p "    Path to your local Vimeo cookies.txt: " COOKIES_LOCAL
   COOKIES_LOCAL="${COOKIES_LOCAL/#\~/$HOME}"
   if [ ! -f "$COOKIES_LOCAL" ]; then info "No such file: $COOKIES_LOCAL"; COOKIES_LOCAL=""; continue; fi
+  # Browser extensions export JSON, but yt-dlp's --cookies only reads the
+  # Netscape format and fails with an opaque parse error on JSON. Convert here.
+  if [ "${COOKIES_LOCAL##*.}" = "json" ] || head -c 1 "$COOKIES_LOCAL" | grep -q '[[{]'; then
+    info "that is a JSON export; converting to Netscape format"
+    CONVERTED="$HOME/.cache/yt-transcribe/vimeo_cookies.txt"
+    if python3 "$HERE/convert-cookies.py" "$COOKIES_LOCAL" "$CONVERTED"; then
+      COOKIES_LOCAL="$CONVERTED"
+    else
+      info "conversion failed"; COOKIES_LOCAL=""; continue
+    fi
+  fi
   # Shape checks only -- no cookie value is ever read into a variable or shown.
   if ! grep -qi 'vimeo\.com' "$COOKIES_LOCAL"; then
     info "That file has no vimeo.com-scoped entries. Export cookies while signed in to Vimeo."; COOKIES_LOCAL=""; continue
@@ -60,12 +71,32 @@ while :; do
   break
 done
 
-# read -s keeps the token off the terminal; it stays in this variable only.
+# The token stays in this variable only: never echoed, never written locally,
+# never passed as an argument.
 TOKEN="${VIMEO_ACCESS_TOKEN:-}"
+if [ -z "$TOKEN" ] && [ -n "${VIMEO_TOKEN_FILE:-}" ]; then
+  TOKFILE="${VIMEO_TOKEN_FILE/#\~/$HOME}"
+  [ -f "$TOKFILE" ] || die "VIMEO_TOKEN_FILE does not exist: $TOKFILE"
+  TOKEN="$(tr -d ' \t\r\n' < "$TOKFILE")"
+  info "token read from $TOKFILE"
+fi
 while [ -z "$TOKEN" ]; do
-  printf '    Vimeo access token (Public + Private scopes; input hidden): '
-  read -rs TOKEN; printf '\n'
-  [ -n "$TOKEN" ] || info "Empty; try again."
+  info "If the token is already saved in a file, give its path; otherwise press"
+  info "Enter and type the token itself (it will not be displayed)."
+  read -r -p "    Path to token file (or Enter to type it): " TOKFILE
+  if [ -n "$TOKFILE" ]; then
+    TOKFILE="${TOKFILE/#\~/$HOME}"
+    if [ -f "$TOKFILE" ]; then
+      TOKEN="$(tr -d ' \t\r\n' < "$TOKFILE")"
+      [ -n "$TOKEN" ] && info "token read from $TOKFILE" || info "That file is empty."
+    else
+      info "No such file: $TOKFILE"
+    fi
+  else
+    printf '    Vimeo access token (Public + Private scopes; input hidden): '
+    read -rs TOKEN; printf '\n'
+    [ -n "$TOKEN" ] || info "Empty; try again."
+  fi
 done
 info "token captured (${#TOKEN} characters; value not displayed)"
 

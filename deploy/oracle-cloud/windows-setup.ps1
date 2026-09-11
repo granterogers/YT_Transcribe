@@ -62,13 +62,20 @@ Then re-run this script (a normal prompt is fine from here on).
   }
   Say "Installing $Distro (this may require a reboot)"
   wsl.exe --install -d $Distro
-  Write-Host @"
+
+  # The installer usually finishes the first-run user setup inline, so re-check
+  # instead of making the operator run this script a second time for no reason.
+  try { $distros = @(wsl.exe --list --quiet 2>$null | ForEach-Object { $_.Trim() } | Where-Object { $_ }) } catch { }
+  if ($distros.Count -eq 0) {
+    Write-Host @"
 
 If Windows asked for a reboot, reboot now. On first launch Ubuntu will ask you
 to create a UNIX username and password. Then re-run this script.
 
 "@ -ForegroundColor Yellow
-  exit 0
+    exit 0
+  }
+  Info 'distribution installed; continuing'
 }
 
 # Prefer the requested distro, else whatever is installed.
