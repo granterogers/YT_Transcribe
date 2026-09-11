@@ -103,7 +103,10 @@ Two things during signup matter later and one of them is irreversible:
 - **Home Region.** *This cannot be changed after signup.* Pick a region you
   actually want to run in — `provision.sh` can target others, but your home
   region is where identity lives and where Always Free capacity is easiest to
-  get.
+  get. This project is operated from Europe, so choose the nearest European
+  region: `eu-frankfurt-1` is the safe default, with `eu-amsterdam-1`,
+  `eu-zurich-1`, `eu-paris-1`, `eu-milan-1`, `eu-madrid-1`, `eu-stockholm-1`
+  and `uk-london-1` as alternatives.
 
 Identity verification asks for a credit or debit card and places a small
 temporary authorization (typically around $1) that is reversed. Always Free
@@ -119,7 +122,7 @@ Once the provisioning email arrives, authenticate against **your home region**,
 naming it explicitly so you skip the 85-entry region menu:
 
 ```bash
-oci session authenticate --profile-name DEFAULT --region us-ashburn-1
+oci session authenticate --profile-name DEFAULT --region eu-frankfurt-1
 ```
 
 Picking the wrong region here sends you to a sign-in realm your account does
@@ -405,7 +408,7 @@ cd ~/YT_Transcribe && .venv/bin/python transcribe_channel.py --combine \
 | `ModuleNotFoundError: pkg_resources` | `setuptools` got upgraded past 81. `pip install 'setuptools<81'`. |
 | Unit stops after ~10 failures | `StartLimitBurst` tripped. Fix the underlying error, then `sudo systemctl reset-failed yt-transcribe@youtube` and start again. |
 | Disk full | Enlarge the boot volume, or check nothing is accumulating under the repo `.tmp/` from a killed run. |
-| `provision.sh` exits 75 | Every AD is out of Always Free ARM capacity. Raise `CAPACITY_RETRY_MINUTES=1440`, or try `REGION=us-phoenix-1`. |
+| `provision.sh` exits 75 | Every AD is out of Always Free ARM capacity. Raise `CAPACITY_RETRY_MINUTES=1440`, or try another EU region, e.g. `REGION=eu-amsterdam-1`. |
 | `provision.sh` says credentials expired | Session tokens last an hour. `oci session authenticate --profile-name DEFAULT` and re-run; it resumes from what already exists. |
 | Bootstrap never finishes | `ssh -i ~/.ssh/yt-transcribe_oracle ubuntu@<ip> 'sudo tail -100 /var/log/yt-transcribe-bootstrap.log'`. Re-run it with `sudo bash /usr/local/bin/yt-bootstrap.sh` — it is idempotent. |
 | Smoke test fails | Nothing is started, by design. The output names the failing stage: discovery (URL/token), cookies, or transcription. |

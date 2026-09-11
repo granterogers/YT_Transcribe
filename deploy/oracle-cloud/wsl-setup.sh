@@ -67,7 +67,7 @@ $(printf '\033[1mReady.\033[0m') Run these four, one at a time, in this WSL shel
        started before that happened. Check it worked with:  oci --version
 
   1. oci session authenticate --profile-name DEFAULT --region <your home region>
-       e.g. --region us-ashburn-1. Name it explicitly: the menu lists 85
+       e.g. --region eu-frankfurt-1. Name it explicitly: the menu lists 85
        regions across every Oracle realm, and choosing one your tenancy does
        not live in sends you to a sign-in page that cannot find your account.
        Your home region is shown top-right when you log in at cloud.oracle.com.

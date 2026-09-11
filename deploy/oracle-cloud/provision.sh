@@ -72,7 +72,7 @@ EOF
 fi
 
 REGION_ARG=(); [ -n "$REGION" ] && REGION_ARG=("$REGION") || REGION_ARG=("$(awk -v p="[$PROFILE]" '$0==p{f=1;next} /^\[/{f=0} f&&/^region/{print $2; exit}' FS=' *= *' "$CONFIG")")
-[ -n "${REGION_ARG[0]}" ] || die "Could not determine a region. Set REGION=<e.g. us-ashburn-1>."
+[ -n "${REGION_ARG[0]}" ] || die "Could not determine a region. Set REGION=<e.g. eu-frankfurt-1>."
 info "region: ${REGION_ARG[0]}  profile: $PROFILE"
 
 TENANCY="$(awk -v p="[$PROFILE]" '$0==p{f=1;next} /^\[/{f=0} f&&/^tenancy/{print $2; exit}' FS=' *= *' "$CONFIG")"
@@ -205,7 +205,7 @@ capacity for ${CAPACITY_RETRY_MINUTES} minutes. This is a regional capacity
 limit, not a problem with your account. Options:
 
   * Keep retrying:  CAPACITY_RETRY_MINUTES=1440 bash $0
-  * Try another region:  REGION=us-phoenix-1 bash $0
+  * Try another region:  REGION=eu-amsterdam-1 bash $0  (stay in the EU)
   * Upgrade to Pay As You Go. The Always Free ARM allowance still applies and
     stays free, but PAYG tenancies get far better placement in the queue.
 
