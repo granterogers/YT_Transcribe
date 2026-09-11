@@ -70,35 +70,62 @@ done
 info "token captured (${#TOKEN} characters; value not displayed)"
 
 # ------------------------------------------------- carry over progress -----
-LOCAL_DB="$REPO_ROOT/vimeo_transcripts/database/transcripts.sqlite3"
+# Where the *existing* local archive lives. Under WSL this is usually on the
+# Windows drive (/mnt/c/...), not inside the WSL clone, so it is overridable and
+# auto-discovered.
 say "Existing progress"
-if [ -f "$LOCAL_DB" ]; then
-  DONE="$(sqlite3 "$LOCAL_DB" 'select count(*) from videos where status="completed"' 2>/dev/null || echo '?')"
+if [ -n "${VIMEO_LOCAL_DIR:-}" ]; then
+  LOCAL_VIMEO="${VIMEO_LOCAL_DIR/#\~/$HOME}"
+elif [ -f "$REPO_ROOT/vimeo_transcripts/database/transcripts.sqlite3" ]; then
+  LOCAL_VIMEO="$REPO_ROOT/vimeo_transcripts"
+else
+  LOCAL_VIMEO=""
+  # Running inside WSL? The archive from the Windows machine is under /mnt/c.
+  if [ -d /mnt/c/Users ]; then
+    info "searching the Windows drive for an existing vimeo_transcripts archive ..."
+    while IFS= read -r hit; do LOCAL_VIMEO="$(dirname "$(dirname "$hit")")"; break; done < <(
+      find /mnt/c/Users -maxdepth 6 -type f -path '*/vimeo_transcripts/database/transcripts.sqlite3' 2>/dev/null)
+    [ -n "$LOCAL_VIMEO" ] && info "found $LOCAL_VIMEO" || true
+  fi
+fi
+LOCAL_DB="${LOCAL_VIMEO:+$LOCAL_VIMEO/database/transcripts.sqlite3}"
+
+if [ -n "$LOCAL_DB" ] && [ -f "$LOCAL_DB" ]; then
+  if command -v sqlite3 >/dev/null; then
+    DONE="$(sqlite3 "$LOCAL_DB" 'select count(*) from videos where status="completed"' 2>/dev/null || echo '?')"
+  else
+    DONE="$(python3 -c "import sqlite3,sys;print(sqlite3.connect('file:'+sys.argv[1]+'?mode=ro',uri=True).execute('select count(*) from videos where status=\"completed\"').fetchone()[0])" "$LOCAL_DB" 2>/dev/null || echo '?')"
+  fi
   info "Found a local Vimeo database with $DONE completed video(s)."
   CARRY="${CARRY_OVER:-}"
   [ -n "$CARRY" ] || { read -r -p "    Copy it (and existing transcripts) to the instance so they are not redone? [Y/n] " CARRY; }
   case "${CARRY:-Y}" in
     [Nn]*) info "Starting fresh on the instance." ;;
     *)
-      # WAL mode means recent commits live in the -wal sidecar; checkpoint first
-      # so a plain file copy cannot silently lose them.
-      sqlite3 "$LOCAL_DB" 'PRAGMA wal_checkpoint(TRUNCATE);' >/dev/null 2>&1 || true
+      # WAL mode keeps recent commits in the -wal sidecar; checkpoint so a plain
+      # file copy cannot silently strand them.
+      if command -v sqlite3 >/dev/null; then
+        sqlite3 "$LOCAL_DB" 'PRAGMA wal_checkpoint(TRUNCATE);' >/dev/null 2>&1 || true
+      else
+        python3 -c "import sqlite3,sys;c=sqlite3.connect(sys.argv[1]);c.execute('PRAGMA wal_checkpoint(TRUNCATE)');c.close()" "$LOCAL_DB" 2>/dev/null || true
+      fi
       "${SSH[@]}" "mkdir -p '$REMOTE_REPO/vimeo_transcripts/database' '$REMOTE_REPO/vimeo_transcripts/transcripts'"
       info "copying database ..."
       scp -i "$KEY" -o StrictHostKeyChecking=accept-new \
-        "$REPO_ROOT"/vimeo_transcripts/database/transcripts.sqlite3* \
+        "$LOCAL_VIMEO"/database/transcripts.sqlite3* \
         "$USER_@$IP:$REMOTE_REPO/vimeo_transcripts/database/"
-      if [ -d "$REPO_ROOT/vimeo_transcripts/transcripts" ]; then
+      if [ -d "$LOCAL_VIMEO/transcripts" ]; then
         info "copying existing transcripts ..."
         scp -i "$KEY" -r -o StrictHostKeyChecking=accept-new \
-          "$REPO_ROOT/vimeo_transcripts/transcripts/." \
+          "$LOCAL_VIMEO/transcripts/." \
           "$USER_@$IP:$REMOTE_REPO/vimeo_transcripts/transcripts/"
       fi
       info "carried over."
       ;;
   esac
 else
-  info "No local Vimeo database at $LOCAL_DB -- the instance will start fresh."
+  info "No existing Vimeo database found -- the instance will start fresh."
+  info "If you have one, re-run with: VIMEO_LOCAL_DIR=/mnt/c/path/to/vimeo_transcripts bash $0"
 fi
 
 # ------------------------------------------------------ deliver secrets ----

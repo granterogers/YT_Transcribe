@@ -10,7 +10,45 @@ hack is inert outside `win32`.
 
 ---
 
-## Quick start — two commands
+## On Windows: start here
+
+The deployment scripts are bash, and the steps they perform need `scp`, `rsync`
+and `sqlite3` — so they run from WSL, not from `cmd` or PowerShell. WSL is also
+what makes your existing files reachable: `/mnt/c` exposes the Windows drive, so
+your `cookies.txt` and the `vimeo_transcripts` archive already on this machine
+are picked up directly.
+
+From a normal `cmd` prompt:
+
+```bat
+curl -L -o windows-setup.ps1 https://raw.githubusercontent.com/granterogers/YT_Transcribe/deploy/oracle-cloud/deploy/oracle-cloud/windows-setup.ps1
+powershell -ExecutionPolicy Bypass -File windows-setup.ps1
+```
+
+It checks for WSL, installs Ubuntu if there is none (that part needs an elevated
+prompt and possibly a reboot — it tells you exactly what to run), then inside
+WSL installs git, jq, sqlite3, rsync and the OCI CLI and clones this repo.
+
+Afterwards, everything happens in the WSL shell:
+
+```bash
+wsl
+oci session authenticate --profile-name DEFAULT
+cd ~/YT_Transcribe && bash deploy/oracle-cloud/provision.sh
+bash deploy/oracle-cloud/launch-vimeo.sh
+```
+
+`launch-vimeo.sh` searches `/mnt/c/Users` for an existing
+`vimeo_transcripts/database/transcripts.sqlite3` so your completed videos are
+not redone. If it is somewhere unusual, point at it:
+
+```bash
+VIMEO_LOCAL_DIR=/mnt/c/path/to/vimeo_transcripts bash deploy/oracle-cloud/launch-vimeo.sh
+```
+
+---
+
+## Quick start — two commands (macOS, Linux, or the WSL shell above)
 
 Everything except Oracle authentication and handing over your own Vimeo
 credentials is automated.
@@ -314,3 +352,5 @@ cd ~/YT_Transcribe && .venv/bin/python transcribe_channel.py --combine \
 | `provision.sh` says credentials expired | Session tokens last an hour. `oci session authenticate --profile-name DEFAULT` and re-run; it resumes from what already exists. |
 | Bootstrap never finishes | `ssh -i ~/.ssh/yt-transcribe_oracle ubuntu@<ip> 'sudo tail -100 /var/log/yt-transcribe-bootstrap.log'`. Re-run it with `sudo bash /usr/local/bin/yt-bootstrap.sh` — it is idempotent. |
 | Smoke test fails | Nothing is started, by design. The output names the failing stage: discovery (URL/token), cookies, or transcription. |
+| `'oci' is not recognized` / `bash` opens WSL's installer on Windows | You are in `cmd`, not WSL. See **On Windows: start here** above. |
+| `launch-vimeo.sh` says it found no existing database | It only searches `/mnt/c/Users` six levels deep. Pass `VIMEO_LOCAL_DIR=/mnt/c/...` explicitly. |
